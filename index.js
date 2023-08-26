@@ -57,6 +57,14 @@ function handle_ReceivedMessages(ws, action, payload) {
       joinRoomById(ws, payload.roomID, payload.playerId);
       break;
     }
+    case "roomsList": {
+      getRoomList(ws);
+      break;
+    }
+
+    case "sendToAll": {
+      sendMessageToAll(ws, payload);
+    }
     default: {
       console.log("Unknown action:", action);
       break;
@@ -65,11 +73,33 @@ function handle_ReceivedMessages(ws, action, payload) {
 }
 
 function onPlayerJoin(ws, action, payload) {
-  idCounter++;
-  playerInfoMap.set(idCounter, { playerName: "Alice" });
+  // generating Unique id for player
+  playerIdCounter++;
+  playerInfoMap.set(playerIdCounter, {
+    socket: ws,
+    playerName: payload.playerName,
+  });
+
+  console.log("New player ID " + playerIdCounter);
+  // sending the playerID  to player
+  const playerIdAssinged = {
+    action: "playerIdAssinged",
+    payload: {
+      playerID: playerIdCounter,
+    },
+  };
+  ws.send(JSON.stringify(playerIdAssinged));
 }
 
 /* ============================= SUB EVENTS ======================================== */
+
+function sendMessageToAll(ws, payload) {
+  const roomID = payload.roomID;
+  const playerID = payload.playerID;
+
+  const currentPlayersInRoom = rooms.get(roomID).currentPlayers;
+  currentPlayersInRoom.forEach((player) => {});
+}
 
 function joinRoomById(ws, roomID, playerID) {
   const roomToJoin = rooms.get(roomID);
@@ -81,13 +111,14 @@ function joinRoomById(ws, roomID, playerID) {
   }
 }
 
-function joinOrCreateRoom(ws, playerId) {
+function joinOrCreateRoom(ws, playerID) {
   let targetRoom = null;
   // find any empty space in the room
   for (const [roomID, room] of rooms) {
     const currentPlayersCount = getCurrentPlayersCount(roomID);
     if (currentPlayersCount < 4) {
       targetRoom = room;
+      console.log("Joined existing room : " + room.roomName);
       break;
     }
   }
@@ -96,19 +127,38 @@ function joinOrCreateRoom(ws, playerId) {
     roomIdCounter++;
     const newRoom = {
       roomName: "Room" + roomIdCounter,
-      currentPlayers: [playerId],
+      currentPlayers: [playerID],
     };
     targetRoom = newRoom;
     rooms.set(roomIdCounter, newRoom);
+    console.log("New Room Created : " + targetRoom.roomName);
   }
   // joint the target room if space is available
-  targetRoom.currentPlayers.push(playerId);
-
-  return newRoom;
+  targetRoom.currentPlayers.push(playerID);
+  console.log("Room Joined sucess : " + targetRoom.roomName);
+  // sending feedback to player
+  const data = {
+    action: "roomJoined",
+    payload: targetRoom,
+  };
+  ws.send(JSON.stringify(data));
+  // return room
+  return targetRoom;
 }
 
-function getCurrentPlayersCount(roomId) {
-  const room = rooms.get(roomId);
+function getRoomList(ws) {
+  const roomsArray = Array.from(rooms.values());
+
+  const data = {
+    action: "roomsList",
+    payload: roomsArray,
+  };
+  const roomsList = JSON.stringify(data);
+  ws.send(roomsList);
+}
+
+function getCurrentPlayersCount(roomID) {
+  const room = rooms.get(roomID);
 
   if (room) {
     const currentPlayersCount = room.currentPlayers.length;
