@@ -127,7 +127,7 @@ function joinOrCreateRoom(ws, playerID) {
     roomIdCounter++;
     const newRoom = {
       roomName: "Room" + roomIdCounter,
-      currentPlayers: [playerID],
+      currentPlayers: [],
     };
     targetRoom = newRoom;
     rooms.set(roomIdCounter, newRoom);
