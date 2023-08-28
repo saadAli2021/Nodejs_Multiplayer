@@ -9,6 +9,7 @@ wss.on("connection", (ws) => {
   ws.on("message", (message) => {
     try {
       const playerData = JSON.parse(message);
+
       handle_ReceivedMessages(ws, playerData.action, playerData.payload);
     } catch (error) {
       console.error("Error parsing JSON:", error);
@@ -136,6 +137,10 @@ function joinOrCreateRoom(ws, playerID) {
   // joint the target room if space is available
   targetRoom.currentPlayers.push(playerID);
   console.log("Room Joined sucess : " + targetRoom.roomName);
+
+  console.log("------------------------------");
+  console.log("Total Rooms" + rooms.size);
+  console.log("------------------------------");
   // sending feedback to player
   const data = {
     action: "roomJoined",
@@ -151,7 +156,9 @@ function getRoomList(ws) {
 
   const data = {
     action: "roomsList",
-    payload: roomsArray,
+    payload: {
+      roomsList: roomsArray,
+    },
   };
   const roomsList = JSON.stringify(data);
   ws.send(roomsList);
