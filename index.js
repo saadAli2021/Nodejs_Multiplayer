@@ -3,6 +3,7 @@ const WebSocket = require("ws");
 const wss = new WebSocket.Server({ port: 8080 }, () => {
   console.log("Server started");
 });
+
 // ********************** MAIN EVENTS *********************************
 wss.on("connection", (ws) => {
   handle_NewConnection(ws);
@@ -76,7 +77,7 @@ function handle_ReceivedMessages(ws, action, payload) {
 function onPlayerJoin(ws, action, payload) {
   // generating Unique id for player
   playerIdCounter++;
-  playerInfoMap.set(playerIdCounter, {
+  playerInfoMap.set(playerIdCounter + "", {
     socket: ws,
     playerName: payload.playerName,
   });
@@ -95,11 +96,44 @@ function onPlayerJoin(ws, action, payload) {
 /* ============================= SUB EVENTS ======================================== */
 
 function sendMessageToAll(ws, payload) {
+  // receiving roomID , playerID and message from client
   const roomID = payload.roomID;
   const playerID = payload.playerID;
+  const messageToSend = payload.message;
+  console.log("*roomID " + roomID + " | playerID " + playerID);
+  // creating a new object to send to clients
+  const data = {
+    action: "sendToAll",
+    payload: {
+      sender: playerID,
+      message: messageToSend,
+    },
+  };
+  // getting current players in room and sending the message to all of them
 
-  const currentPlayersInRoom = rooms.get(roomID).currentPlayers;
-  currentPlayersInRoom.forEach((player) => {});
+  const currentRoom = rooms.get(roomID);
+  console.log("currentRoom : " + currentRoom);
+  const currentPlayersInRoom = currentRoom.currentPlayers;
+  console.log("currentPlayersInRoom : " + currentPlayersInRoom);
+  console.log(playerInfoMap);
+  currentPlayersInRoom.forEach((player) => {
+    // getting refrence of player socket to send them the message
+    const playerSocket = getSocketByPlayerID(player);
+    if (playerSocket !== null) {
+      playerSocket.send(JSON.stringify(data));
+    } else {
+      console.log("Error : Cannot find socket refrence of player :" + player);
+    }
+  });
+}
+
+function getSocketByPlayerID(playerID) {
+  if (playerInfoMap.has(playerID)) {
+    const playerInfo = playerInfoMap.get(playerID);
+    return playerInfo.socket;
+  } else {
+    return null; // PlayerID not found in the map
+  }
 }
 
 function joinRoomById(ws, roomID, playerID) {
@@ -127,20 +161,17 @@ function joinOrCreateRoom(ws, playerID) {
   if (targetRoom === null) {
     roomIdCounter++;
     const newRoom = {
-      roomName: "Room" + roomIdCounter,
+      roomID: roomIdCounter,
+      roomName: roomIdCounter,
       currentPlayers: [],
     };
     targetRoom = newRoom;
-    rooms.set(roomIdCounter, newRoom);
+    rooms.set(roomIdCounter + "", newRoom);
     console.log("New Room Created : " + targetRoom.roomName);
   }
   // joint the target room if space is available
   targetRoom.currentPlayers.push(playerID);
   console.log("Room Joined sucess : " + targetRoom.roomName);
-
-  console.log("------------------------------");
-  console.log("Total Rooms" + rooms.size);
-  console.log("------------------------------");
   // sending feedback to player
   const data = {
     action: "roomJoined",
@@ -174,24 +205,3 @@ function getCurrentPlayersCount(roomID) {
     return 0; // Room not found
   }
 }
-
-/* ============================= Temporary Test functions ======================================== */
-// function sendPlayerData(ws) {
-//   const playerData = {
-//     action: "playerData",
-//     payload: {
-//       msgType: "playerData",
-//       playerName: "Alice",
-//       id: 123,
-//       colors: ["Red", "Green", "Blue", "Yellow", "Purple"],
-//     },
-//   };
-//   const jsonPlayerData = JSON.stringify(playerData);
-//   ws.send(jsonPlayerData);
-// }
-// function handlePlayerData(action, payload) {
-//   console.log("Player Message Type:", payload.msgType);
-//   console.log("Player Name:", payload.playerName);
-//   console.log("ID:", payload.id);
-//   console.log("Colors:", payload.colors);
-// }
