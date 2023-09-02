@@ -66,6 +66,7 @@ function handle_ReceivedMessages(ws, action, payload) {
 
     case "sendToAll": {
       sendMessageToAll(ws, payload);
+      break;
     }
     default: {
       console.log("Unknown action:", action);
@@ -100,22 +101,22 @@ function sendMessageToAll(ws, payload) {
   const roomID = payload.roomID;
   const playerID = payload.playerID;
   const messageToSend = payload.message;
-  console.log("*roomID " + roomID + " | playerID " + playerID);
+  const playerName = getPlayerName(playerID);
   // creating a new object to send to clients
   const data = {
     action: "sendToAll",
     payload: {
       sender: playerID,
       message: messageToSend,
+      playerName: playerName,
     },
   };
   // getting current players in room and sending the message to all of them
 
   const currentRoom = rooms.get(roomID);
-  console.log("currentRoom : " + currentRoom);
+
   const currentPlayersInRoom = currentRoom.currentPlayers;
-  console.log("currentPlayersInRoom : " + currentPlayersInRoom);
-  console.log(playerInfoMap);
+
   currentPlayersInRoom.forEach((player) => {
     // getting refrence of player socket to send them the message
     const playerSocket = getSocketByPlayerID(player);
@@ -134,6 +135,13 @@ function getSocketByPlayerID(playerID) {
   } else {
     return null; // PlayerID not found in the map
   }
+}
+
+function getPlayerName(playerID) {
+  if (playerInfoMap.has(playerID)) {
+    const playerInfo = playerInfoMap.get(playerID);
+    return playerInfo.playerName;
+  } else return "No_Name";
 }
 
 function joinRoomById(ws, roomID, playerID) {
