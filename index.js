@@ -6,7 +6,6 @@ const wss = new WebSocket.Server({ port: 8080 }, () => {
 
 // ********************** MAIN EVENTS *********************************
 wss.on("connection", (ws) => {
-  handle_NewConnection(ws);
   ws.on("message", (message) => {
     try {
       const playerData = JSON.parse(message);
@@ -41,8 +40,6 @@ function handle_ServerIsReady() {
 function handle_ClientDisconnect(code, reason) {
   console.log(`Client disconnected: code ${code}, reason: ${reason}`);
 }
-// A function to handle new connection
-function handle_NewConnection(ws) {}
 
 // A function to Handle received data from the client
 function handle_ReceivedMessages(ws, action, payload) {
@@ -63,9 +60,21 @@ function handle_ReceivedMessages(ws, action, payload) {
       getRoomList(ws);
       break;
     }
-
     case "sendToAll": {
       sendMessageToAll(ws, payload);
+      break;
+    }
+    case "sendToOthers": {
+      sendMessageToOthers(ws, payload);
+      break;
+    }
+    case "sendToTarget": {
+      sendMessageToTarget(ws, payload);
+      break;
+    }
+
+    case "playerList": {
+      getPlayerList(ws, payload);
       break;
     }
     default: {
@@ -112,11 +121,8 @@ function sendMessageToAll(ws, payload) {
     },
   };
   // getting current players in room and sending the message to all of them
-
   const currentRoom = rooms.get(roomID);
-
   const currentPlayersInRoom = currentRoom.currentPlayers;
-
   currentPlayersInRoom.forEach((player) => {
     // getting refrence of player socket to send them the message
     const playerSocket = getSocketByPlayerID(player);
@@ -124,6 +130,71 @@ function sendMessageToAll(ws, payload) {
       playerSocket.send(JSON.stringify(data));
     } else {
       console.log("Error : Cannot find socket refrence of player :" + player);
+    }
+  });
+}
+
+function sendMessageToOthers(ws, payload) {
+  // receiving roomID , playerID and message from client
+  const roomID = payload.roomID;
+  const playerID = payload.playerID;
+  const messageToSend = payload.message;
+  const playerName = getPlayerName(playerID);
+  // creating a new object to send to clients
+  const data = {
+    action: "sendToOthers",
+    payload: {
+      sender: playerID,
+      message: messageToSend,
+      playerName: playerName,
+    },
+  };
+  // getting current players in room and sending the message to all of them
+  const currentRoom = rooms.get(roomID);
+  const currentPlayersInRoom = currentRoom.currentPlayers;
+  currentPlayersInRoom.forEach((player) => {
+    //skip the sender player
+    if (player === playerID) return;
+    // getting refrence of player socket to send them the message
+    const playerSocket = getSocketByPlayerID(player);
+    if (playerSocket !== null) {
+      playerSocket.send(JSON.stringify(data));
+    } else {
+      console.log("Error : Cannot find socket refrence of player :" + player);
+    }
+  });
+}
+
+//sendMessageToTarget
+function sendMessageToTarget(ws, payload) {
+  // receiving roomID , playerID and message from client
+  const roomID = payload.roomID;
+  const playerID = payload.senderID;
+  const targetPlayerID = payload.targetID;
+  const messageToSend = payload.message;
+  const playerName = payload.senderName;
+  // creating a new object to send to clients
+  const data = {
+    action: "sendToTarget",
+    payload: {
+      roomID: roomID,
+      sender: playerID,
+      message: messageToSend,
+      playerName: playerName,
+    },
+  };
+  // getting current players in room and sending the message to all of them
+  const currentRoom = rooms.get(roomID);
+  const currentPlayersInRoom = currentRoom.currentPlayers;
+  currentPlayersInRoom.forEach((player) => {
+    if (player === targetPlayerID) {
+      // getting refrence of player socket to send them the message
+      const playerSocket = getSocketByPlayerID(player);
+      if (playerSocket !== null) {
+        playerSocket.send(JSON.stringify(data));
+      } else {
+        console.log("Error : Cannot find socket refrence of player :" + player);
+      }
     }
   });
 }
@@ -186,13 +257,11 @@ function joinOrCreateRoom(ws, playerID) {
     payload: targetRoom,
   };
   ws.send(JSON.stringify(data));
-  // return room
   return targetRoom;
 }
 
 function getRoomList(ws) {
   const roomsArray = Array.from(rooms.values());
-
   const data = {
     action: "roomsList",
     payload: {
@@ -202,10 +271,39 @@ function getRoomList(ws) {
   const roomsList = JSON.stringify(data);
   ws.send(roomsList);
 }
+function getPlayerList(ws, payload) {
+  const senderID = payload.senderID;
+  const senderSocket = getSocketByPlayerID(senderID);
+  const roomID = payload.roomID;
+  const room = rooms.get(roomID);
+  let playersData = [];
 
+  if (room) {
+    const playersList = room.currentPlayers;
+
+    playersList.forEach((playerID) => {
+      let player = playerInfoMap.get(playerID);
+      player.playerID = playerID;
+      if (player) playersData.push(player);
+    });
+
+    if (senderSocket) {
+      var data = {
+        action: "playerList",
+        payload: {
+          playerList: playersData,
+        },
+      };
+
+      console.log("playerdata =  " + playersData[0]);
+      senderSocket.send(JSON.stringify(data));
+    } else {
+      console.log("Player not found!");
+    }
+  }
+}
 function getCurrentPlayersCount(roomID) {
   const room = rooms.get(roomID);
-
   if (room) {
     const currentPlayersCount = room.currentPlayers.length;
     return currentPlayersCount;
