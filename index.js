@@ -38,7 +38,29 @@ function handle_ServerIsReady() {
 }
 // A function to handle client Disconnection
 function handle_ClientDisconnect(code, reason) {
-  console.log(`Client disconnected: code ${code}, reason: ${reason}`);
+  console.log("code : " + code + "   Reason : " + reason);
+  switch (code) {
+    case 1000:
+      // Normal closure, no action needed.
+      console.log("Client disconnected with code 1000 (Normal closure)");
+      break;
+    case 1001:
+      // Client is going away, handle as needed.
+      console.log("Client disconnected with code 1001 (Going away)");
+      break;
+    case 1006:
+      // Connection abruptly closed, handle as needed.
+      console.log(
+        "Client disconnected with code 1006 (Connection abruptly closed)"
+      );
+      break;
+    default:
+      // Handle other error codes or unknown codes here.
+      console.log(
+        `Client disconnected with code ${code} and reason: ${reason}`
+      );
+      break;
+  }
 }
 
 // A function to Handle received data from the client
@@ -50,6 +72,10 @@ function handle_ReceivedMessages(ws, action, payload) {
     }
     case "joinOrCreateRoom": {
       joinOrCreateRoom(ws, payload.playerId);
+      break;
+    }
+    case "isMasterClient": {
+      getMasterClientStatus(ws, payload.playerId);
       break;
     }
     case "joinRoomById": {
@@ -90,6 +116,7 @@ function onPlayerJoin(ws, action, payload) {
   playerInfoMap.set(playerIdCounter + "", {
     socket: ws,
     playerName: payload.playerName,
+    isMasterClient: false,
   });
 
   console.log("New player ID " + playerIdCounter);
@@ -199,6 +226,19 @@ function sendMessageToTarget(ws, payload) {
   });
 }
 
+function getMasterClientStatus(ws, playerID) {
+  const status = isMasterClientByID(playerID);
+
+  const data = {
+    action: "isMasterClient",
+    payload: {
+      isMasterClient: status,
+    },
+  };
+
+  ws.send(JSON.stringify(data));
+}
+
 function getSocketByPlayerID(playerID) {
   if (playerInfoMap.has(playerID)) {
     const playerInfo = playerInfoMap.get(playerID);
@@ -213,6 +253,31 @@ function getPlayerName(playerID) {
     const playerInfo = playerInfoMap.get(playerID);
     return playerInfo.playerName;
   } else return "No_Name";
+}
+
+function isMasterClientByID(playerID) {
+  if (playerInfoMap.has(playerID)) {
+    const playerInfo = playerInfoMap.get(playerID);
+    return playerInfo.isMasterClient;
+  }
+}
+
+function setMasterClient(playerId) {
+  // Check if the player ID exists in the map
+  if (playerInfoMap.has(playerId)) {
+    // Get the player's info
+    const playerInfo = playerInfoMap.get(playerId);
+
+    // Update the isMasterClient property
+    playerInfo.isMasterClient = true;
+
+    // Update the player's info in the map
+    playerInfoMap.set(playerId, playerInfo);
+
+    console.log(`Player ${playerId} is now the master client.`);
+  } else {
+    console.log(`Player ${playerId} not found in the playerInfoMap.`);
+  }
 }
 
 function joinRoomById(ws, roomID, playerID) {
@@ -246,12 +311,15 @@ function joinOrCreateRoom(ws, playerID) {
     };
     targetRoom = newRoom;
     rooms.set(roomIdCounter + "", newRoom);
+    //set the master client
+    setMasterClient(playerID);
+
     console.log("New Room Created : " + targetRoom.roomName);
   }
   // joint the target room if space is available
   targetRoom.currentPlayers.push(playerID);
   console.log("Room Joined sucess : " + targetRoom.roomName);
-  // sending feedback to player
+
   const data = {
     action: "roomJoined",
     payload: targetRoom,
@@ -283,7 +351,9 @@ function getPlayerList(ws, payload) {
 
     playersList.forEach((playerID) => {
       let player = playerInfoMap.get(playerID);
+      // adding a plarerID property
       player.playerID = playerID;
+
       if (player) playersData.push(player);
     });
 
@@ -294,8 +364,6 @@ function getPlayerList(ws, payload) {
           playerList: playersData,
         },
       };
-
-      console.log("playerdata =  " + playersData[0]);
       senderSocket.send(JSON.stringify(data));
     } else {
       console.log("Player not found!");
@@ -307,7 +375,5 @@ function getCurrentPlayersCount(roomID) {
   if (room) {
     const currentPlayersCount = room.currentPlayers.length;
     return currentPlayersCount;
-  } else {
-    return 0; // Room not found
   }
 }
