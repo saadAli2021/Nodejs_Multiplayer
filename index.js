@@ -17,7 +17,8 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", (code, reason) => {
-    handle_ClientDisconnect(code, reason);
+    const playerInfo = getPlayerInfoByWebSocket(ws);
+    handle_ClientDisconnect(code, reason, playerInfo);
   });
 });
 
@@ -37,8 +38,38 @@ function handle_ServerIsReady() {
   console.log("server is listening to port 8080");
 }
 // A function to handle client Disconnection
-function handle_ClientDisconnect(code, reason) {
-  console.log("code : " + code + "   Reason : " + reason);
+function handle_ClientDisconnect(code, reason, playerinfo) {
+  let stackTrace = "";
+  const { playerName, playerID, roomID, isMasterClient } = playerinfo;
+  stackTrace =
+    "[" +
+    playerName +
+    " with ID " +
+    playerID +
+    " of room " +
+    roomID +
+    " left \n";
+
+  console.log(stackTrace + " " + isMasterClient);
+  // remove the player from the playerInfoMap
+  playerInfoMap.delete(playerID);
+  // if it was master client then create a new master client
+  let room = rooms.get(roomID);
+  if (!room) console.log("room noti found");
+  if (isMasterClient) {
+    stackTrace += " he was a MasterClient \n";
+    // remove the player who left the game from room currentplayers
+    removePlayerFromCurrentPlayersOfRoom(playerID, roomID);
+    // make the player masterclient who is at zero index
+    setMasterClient(room.currentPlayers[0]);
+    stackTrace +=
+      getPlayerName(room.currentPlayers[0]) +
+      " is new masterclient with ID :" +
+      room.currentPlayers[0] +
+      " ]";
+  }
+  //if it was the last player in the room then delete the room
+
   switch (code) {
     case 1000:
       // Normal closure, no action needed.
@@ -50,9 +81,7 @@ function handle_ClientDisconnect(code, reason) {
       break;
     case 1006:
       // Connection abruptly closed, handle as needed.
-      console.log(
-        "Client disconnected with code 1006 (Connection abruptly closed)"
-      );
+      console.log("Client disconnected with code 1006 (PlayerName : )");
       break;
     default:
       // Handle other error codes or unknown codes here.
@@ -61,6 +90,54 @@ function handle_ClientDisconnect(code, reason) {
       );
       break;
   }
+}
+
+// Function to get playerName from WebSocket connection
+function getPlayerInfoByWebSocket(ws) {
+  for (const [key, playerInfo] of playerInfoMap) {
+    if (playerInfo.socket === ws) {
+      playerInfo.playerID = key;
+      return playerInfo;
+    }
+  }
+  // Return null or an appropriate default value if the player is not found
+  return null;
+}
+
+function removePlayerFromCurrentPlayersOfRoom(playerID, roomID) {
+  let room = rooms.get(roomID);
+  let newlistOfPlayers = [];
+  if (!room) console.log("room not foundi");
+  if (room) {
+    newlistOfPlayers = room.currentPlayers.filter((id) => id !== playerID);
+    room.currentPlayers = newlistOfPlayers;
+    rooms.set(roomID, room);
+    console.log(" player removed sucess ");
+  }
+
+  console.log("---new list of current players---");
+  rooms.get(roomID).currentPlayers.forEach((p) => {
+    console.log(" [" + p + "] ");
+  });
+}
+
+function addPlayerToCurrentPlayersOfRoom(playerID, roomID) {
+  let room = rooms.get(roomID);
+
+  if (!room) {
+    console.log("room not found [addPlayerToCurrentPlayersOfRoom]");
+    return;
+  }
+  let oldCurrentPlayers = room.currentPlayers;
+  if (!oldCurrentPlayers) {
+    console.log(
+      "current players is empty or not found [addPlayerToCurrentPlayersOfRoom]"
+    );
+  }
+
+  room.currentPlayers = [...oldCurrentPlayers, playerID];
+  rooms.set(roomID, room);
+  console.log("Updated currentPlayers:", rooms.get(roomID).currentPlayers);
 }
 
 // A function to Handle received data from the client
@@ -117,6 +194,7 @@ function onPlayerJoin(ws, action, payload) {
     socket: ws,
     playerName: payload.playerName,
     isMasterClient: false,
+    roomID: null,
   });
 
   console.log("New player ID " + playerIdCounter);
@@ -304,20 +382,25 @@ function joinOrCreateRoom(ws, playerID) {
   // Creating A new Room if no space is available in any room
   if (targetRoom === null) {
     roomIdCounter++;
-    const newRoom = {
-      roomID: roomIdCounter,
-      roomName: roomIdCounter,
+    targetRoom = {
+      roomID: roomIdCounter.toString(),
+      roomName: roomIdCounter.toString(),
       currentPlayers: [],
     };
-    targetRoom = newRoom;
-    rooms.set(roomIdCounter + "", newRoom);
+
+    rooms.set(roomIdCounter.toString(), targetRoom);
     //set the master client
     setMasterClient(playerID);
 
     console.log("New Room Created : " + targetRoom.roomName);
   }
-  // joint the target room if space is available
-  targetRoom.currentPlayers.push(playerID);
+
+  // joint the target room
+  //targetRoom.currentPlayers.push(playerID);
+  addPlayerToCurrentPlayersOfRoom(playerID, targetRoom.roomID);
+
+  //initialize the roomID field of that player in playerInfoMap
+  setPlayerRoomID(playerID, targetRoom.roomID);
   console.log("Room Joined sucess : " + targetRoom.roomName);
 
   const data = {
@@ -328,6 +411,16 @@ function joinOrCreateRoom(ws, playerID) {
   return targetRoom;
 }
 
+function setPlayerRoomID(playerID, roomID) {
+  let player = playerInfoMap.get(playerID);
+  if (player) {
+    player.roomID = roomID;
+    playerInfoMap.set(playerID, player);
+    console.log("roomID updated for player " + player.playerName);
+  } else {
+    console.log("Player Not Found while [setPlayerRoomID()]");
+  }
+}
 function getRoomList(ws) {
   const roomsArray = Array.from(rooms.values());
   const data = {
