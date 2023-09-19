@@ -53,13 +53,15 @@ function handle_ClientDisconnect(code, reason, playerinfo) {
   console.log(stackTrace + " " + isMasterClient);
   // remove the player from the playerInfoMap
   playerInfoMap.delete(playerID);
-  // if it was master client then create a new master client
+
   let room = rooms.get(roomID);
-  if (!room) console.log("room noti found");
+  if (!room) console.log("room not found");
+  // remove the player who left the game from room currentplayers
+  removePlayerFromCurrentPlayersOfRoom(playerID, roomID);
+  // if it was master client then create a new master client
   if (isMasterClient) {
     stackTrace += " he was a MasterClient \n";
-    // remove the player who left the game from room currentplayers
-    removePlayerFromCurrentPlayersOfRoom(playerID, roomID);
+
     // make the player masterclient who is at zero index
     setMasterClient(room.currentPlayers[0]);
     stackTrace +=
@@ -68,6 +70,8 @@ function handle_ClientDisconnect(code, reason, playerinfo) {
       room.currentPlayers[0] +
       " ]";
   }
+  // display the currentplayer of the room
+  console.log("players left ib the room " + room.currentPlayers);
   //if it was the last player in the room then delete the room
 
   switch (code) {
@@ -238,7 +242,6 @@ function sendMessageToAll(ws, payload) {
     }
   });
 }
-
 function sendMessageToOthers(ws, payload) {
   // receiving roomID , playerID and message from client
   const roomID = payload.roomID;
@@ -304,6 +307,25 @@ function sendMessageToTarget(ws, payload) {
   });
 }
 
+function broadcastMessageInRoom(ws, data) {
+  let roomID = getPlayerInfoByWebSocket(ws).roomID;
+  if (!roomID) {
+    console.log("roomID not found [broadcastMessageInRoom]");
+    return;
+  }
+  const currentRoom = rooms.get(roomID);
+  const currentPlayersInRoom = currentRoom.currentPlayers;
+  currentPlayersInRoom.forEach((player) => {
+    // getting refrence of player socket to send them the message
+    const playerSocket = getSocketByPlayerID(player);
+    if (playerSocket !== null) {
+      playerSocket.send(data);
+    } else {
+      console.log("Error : Cannot find socket refrence of player :" + player);
+    }
+  });
+}
+
 function getMasterClientStatus(ws, playerID) {
   const status = isMasterClientByID(playerID);
 
@@ -360,12 +382,26 @@ function setMasterClient(playerId) {
 
 function joinRoomById(ws, roomID, playerID) {
   const roomToJoin = rooms.get(roomID);
-  const currentPlayersInRoom = roomToJoin.currentPlayers.count;
-  if (currentPlayersInRoom < 4) {
-    roomToJoin.currentPlayers.push(playerID);
-  } else {
-    console.log("Error : Room is already Full");
+
+  if (!roomToJoin) {
+    console.log("Error: Room not found.");
+    return;
   }
+
+  const currentPlayersInRoom = roomToJoin.currentPlayers.length;
+
+  if (currentPlayersInRoom >= 4) {
+    console.log("Error: Room is already full.");
+    return;
+  }
+
+  if (roomToJoin.currentPlayers.includes(playerID)) {
+    console.log("Error: Player is already in the room.");
+    return;
+  }
+
+  roomToJoin.currentPlayers.push(playerID);
+  console.log("Player joined the room successfully.");
 }
 
 function joinOrCreateRoom(ws, playerID) {
@@ -387,22 +423,16 @@ function joinOrCreateRoom(ws, playerID) {
       roomName: roomIdCounter.toString(),
       currentPlayers: [],
     };
-
     rooms.set(roomIdCounter.toString(), targetRoom);
     //set the master client
     setMasterClient(playerID);
-
     console.log("New Room Created : " + targetRoom.roomName);
   }
-
   // joint the target room
-  //targetRoom.currentPlayers.push(playerID);
   addPlayerToCurrentPlayersOfRoom(playerID, targetRoom.roomID);
-
   //initialize the roomID field of that player in playerInfoMap
   setPlayerRoomID(playerID, targetRoom.roomID);
   console.log("Room Joined sucess : " + targetRoom.roomName);
-
   const data = {
     action: "roomJoined",
     payload: targetRoom,
@@ -430,7 +460,8 @@ function getRoomList(ws) {
     },
   };
   const roomsList = JSON.stringify(data);
-  ws.send(roomsList);
+  broadcastMessageInRoom(ws, roomsList);
+  //ws.send(roomsList);
 }
 function getPlayerList(ws, payload) {
   const senderID = payload.senderID;
